@@ -1,19 +1,56 @@
 ﻿<#
     AUTHER------: Garvey Snow
-    VERSION-----: 1.0
+    VERSION-----: 1.1
     DESCRIPTION-: Connect-VIServer wrapper, download and cache vmware.powercli module and connect the a vcenter server
     DEPENDANCIES: write-segline.ps1 - Provided in folder and import to script
 	BUILD ENV   : Powershell Version 5.0.10586.117
     LICENCE-----: GNU GENERAL PUBLIC LICENSE
     KB: o->https://ss64.com/ps/syntax-datatypes.html
+    KB: 0->https://ss64.com/nt/syntax-variables.html
 	UPDATE: 15/11/2017 @ 16:11
 #>
 function connectVI()
 {
 
-    param([string[]]$server)
+    param( [string[]]$server, [string[]]$path )
 
-if($vmware_module = Find-Module -Name VMware.PowerCLI -Verbose)
+    
+    ################################################
+    #### CACHE PATH FOR VMWARE.POWERCLI            #
+    #### - If path is not specified will use local #
+    ####   temp path for logged on user            #
+    ################################################
+    if($path -eq $null -or $path.Length -eq 0) 
+    { 
+        $cache_module_path = $env:APPDATA + "\VMWARE-POWERCLI-MODULE-CACHE" 
+
+        ## CREATE DIRECTORY IF IT DOES NOT EXISTS
+        if(!(Test-Path -Path $cache_module_path))
+        {
+            Write-Warning -Message 'CACHE FOLDER DOES NOT EXIST - MOVING TO CREATE'
+            New-Item -ItemType Directory -Path $env:APPDATA -Name "VMWARE-POWERCLI-MODULE-CACHE" -Value $null
+
+            #SET VAR
+            $cache_module_path = $env:APPDATA + "\VMWARE-POWERCLI-MODULE-CACHE" 
+        }
+        else
+        {
+            $cache_module_path = $env:APPDATA + "\VMWARE-POWERCLI-MODULE-CACHE" 
+        }
+    }
+    else
+    { 
+        # IF SET FROM SWITCH -PATH
+        $cache_module_path  = $path    
+    }
+    
+    
+    ################################################
+    #### Check if module has been download         #
+    #### - If path is not specified will use local #
+    ####   temp path for logged on user            #
+    ################################################    
+    if($vmware_module = Find-Module -Name VMware.PowerCLI -Verbose)
     {
         
         $creds_adm = Get-Credential -UserName 'calvarycare\' -Message 'Please enter your account information.' -Verbose
@@ -32,8 +69,8 @@ if($vmware_module = Find-Module -Name VMware.PowerCLI -Verbose)
             Install-Module -Name VMware.PowerCLI –Scope CurrentUser -Verbose
 
             # Save Mudule and cache to local folder    
-            WRITE-SEGLINE -action -firstline 'Saving module for offline use - Cache Folder : ' -secondline $global:config.module_cache -numlines 2
-            Save-Module -Name VMware.PowerCLI -Path $global:config.module_cache -Verbose
+            WRITE-SEGLINE -action -firstline 'Saving module for offline use - Cache Folder : ' -secondline $cache_module_path  -numlines 2
+            Save-Module -Name VMware.PowerCLI -Path $cache_module_path -Verbose
 
             # import the module command line
             WRITE-SEGLINE -action -firstline 'Importing Module CMDLETS for ' -secondline 'Vmware.PowerCLI' -numlines 2 -color yellow
@@ -47,58 +84,22 @@ if($vmware_module = Find-Module -Name VMware.PowerCLI -Verbose)
             Import-Module VMware.PowerCLI -Verbose
         }
         #---------------------------------------------
-        # if vCenter Server are linked to a Master 
+        # Connect to vCenter Server
         #---------------------------------------------
-        if($linked -eq $true)
+        WRITE-SEGLINE -action -firstline 'Connecting to vCenter Server' -secondline $server -numlines 2 -color yellow
+        if($vc_connect_obj = Connect-VIServer -Server $server -Credential $creds_adm -Verbose -ErrorVariable $vc_connect_error_obj | FT -AutoSize)
         {
-                #---------------------------------------------
-                # Connect to vCenter Servesr with linked mode Enabled
-                #---------------------------------------------
-                foreach($vc_server in $Global:config.vcenter_Servers)
-                {
-                    WRITE-SEGLINE -action -firstline 'Connecting to vCenter Server' -secondline $vc_server -numlines 2 -color yellow
-                    Connect-VIServer -AllLinked:$true -Server $vc_server -Credential $creds_adm | FT -AutoSize
-                    WRITE-SEGLINE -response -firstline 'Sucessfully Connected to ' -secondline $vc_server -numlines 3 -color green -thirdline 'LINKED MODE: YES'
-                }        
+            WRITE-SEGLINE -response -firstline 'Sucessfully Connected to ' -secondline $server -numlines 2 -color green
+            $vc_connect_obj | FT -AutoSize
         }
         else
-        {       if($hvc_server -eq $null)
-                { <#
-                    --o-| switch between config file and switch imput
-                  #> 
-                    WRITE-SEGLINE -action -firstline 'Connecting to vCenter Server' -secondline $Global:config.vcenter_Servers[0] -numlines 2 -color yellow
-                    if($vc_connect_obj = Connect-VIServer -Server $Global:config.vcenter_Servers[0] -Credential $creds_adm -Verbose -ErrorVariable $vc_connect_error_obj | FT -AutoSize)
-                    {
-                        WRITE-SEGLINE -response -firstline 'Sucessfully Connected to ' -secondline $Global:vCenter_Servers[0] -numlines 2 -color green
-                        $vc_connect_obj | FT -AutoSize
-                    }
-                    else
-                    {
-                        WRITE-SEGLINE -error -firstline 'Error Connecting to ' -secondline $Global:config.vcenter_Servers[0] -numlines 2 -color red
-                        $vc_connect_error_obj
-                    }
-                }
-                else
-                {
-                    WRITE-SEGLINE -action -firstline 'Connecting to vCenter | HOST' -secondline $Global:config.vcenter_Servers[0] -numlines 2 -color yellow
-                    if($vc_connect_obj = Connect-VIServer -Server $hvc_server -Credential $creds_adm -Verbose -ErrorVariable $vc_connect_error_obj | FT -AutoSize)
-                    {
-                        WRITE-SEGLINE -response -firstline 'Sucessfully Connected to ' -secondline $hvc_server -numlines 2 -color green
-                        $vc_connect_obj | FT -AutoSize
-                    }
-                    else
-                    {
-                        WRITE-SEGLINE -error -firstline 'Error Connecting to ' -secondline $hvc_server -numlines 2 -color red
-                        $vc_connect_error_obj
-                    }                    
-                }
+        {
+            WRITE-SEGLINE -error -firstline 'Error Connecting to ' -secondline $server -numlines 2 -color red
+            $vc_connect_error_obj
         }
-
-    }
+    }       
     else
     {
         WRITE-SEGLINE -error -firstline 'Counld not find module' -secondline 'VMware.PowerCLI Suspending script' -numlines 2 -color red 
-    
-
     }
 }
